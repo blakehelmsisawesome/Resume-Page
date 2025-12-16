@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mini Putt Putt</title>
+  <style>
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      padding: 16px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background: linear-gradient(#1e7f43, #145c31);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+
+    /* Home button */
+    #homeBtn {
+      position: fixed;
+      top: 16px;
+      left: 16px;
+      z-index: 999;
+      text-decoration: none;
+      color: white;
+      font-weight: 800;
+      background: rgba(0,0,0,0.25);
+      border: 2px solid rgba(255,255,255,0.25);
+      padding: 8px 12px;
+      border-radius: 12px;
+      backdrop-filter: blur(6px);
+    }
+    #homeBtn:hover { background: rgba(0,0,0,0.35); }
+
+    /* Game card */
+    #gameWrap {
+      position: relative;
+      background: #0b3d21;
+      padding: 12px;
+      border-radius: 16px;
+      box-shadow: 0 20px 40px rgba(0,0,0,.4);
+
+      /* Make it smaller and screen-friendly */
+      width: min(380px, 92vw);
+    }
+
+    /* IMPORTANT: keep aspect ratio so it NEVER stretches */
+    canvas {
+      display: block;
+      width: 100%;
+      aspect-ratio: 9 / 13; /* 360 / 520 */
+      height: auto;
+
+      /* avoid it getting too tall on small screens */
+      max-height: 74vh;
+
+      background: radial-gradient(circle at center, #34d37a, #1e8f55);
+      border-radius: 12px;
+    }
+
+    #ui {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      margin-top: 8px;
+      color: white;
+      font-weight: 700;
+      font-size: 14px;
+    }
+
+    #restart {
+      background: #1abc9c;
+      border: none;
+      border-radius: 10px;
+      padding: 6px 12px;
+      font-weight: 800;
+      cursor: pointer;
+      color: #062b1a;
+    }
+
+    /* Intro screen */
+    #intro {
+      position: absolute;
+      inset: 12px;             /* match padding visually */
+      background: rgba(0,0,0,0.6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 12px;
+    }
+
+    #introCard {
+      background: #0b3d21;
+      padding: 18px;
+      border-radius: 16px;
+      color: white;
+      text-align: center;
+      width: min(260px, 78vw);
+      box-shadow: 0 12px 28px rgba(0,0,0,.45);
+    }
+
+    .colors {
+      display: flex;
+      justify-content: space-between;
+      margin: 16px 0;
+      gap: 8px;
+    }
+
+    .color {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      cursor: pointer;
+      border: 3px solid transparent;
+      box-shadow: inset -3px -3px 6px rgba(0,0,0,.3);
+      flex: 0 0 auto;
+    }
+    .color.selected { border-color: white; }
+
+    #startGame {
+      margin-top: 10px;
+      width: 100%;
+      padding: 9px;
+      border: none;
+      border-radius: 12px;
+      background: #1abc9c;
+      font-weight: 900;
+      cursor: pointer;
+      color: #062b1a;
+    }
+  </style>
+</head>
+
+<body>
+  <a href="resume.html" id="homeBtn">← Home</a>
+
+  <div id="gameWrap">
+    <!-- Internal resolution stays consistent -->
+    <canvas id="game" width="360" height="520"></canvas>
+
+    <div id="intro">
+      <div id="introCard">
+        <h2>⛳ Mini Putt Putt</h2>
+        <p>Choose your ball color</p>
+        <div class="colors">
+          <div class="color selected" data-color="#ffffff" style="background:#ffffff"></div>
+          <div class="color" data-color="#3498db" style="background:#3498db"></div>
+          <div class="color" data-color="#e74c3c" style="background:#e74c3c"></div>
+          <div class="color" data-color="#f1c40f" style="background:#f1c40f"></div>
+          <div class="color" data-color="#9b59b6" style="background:#9b59b6"></div>
+        </div>
+        <button id="startGame">Start</button>
+      </div>
+    </div>
+
+    <div id="ui">
+      <div>Strokes: <span id="strokes">0</span></div>
+      <div id="message"></div>
+      <button id="restart">Restart</button>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+
+    const strokesEl = document.getElementById('strokes');
+    const messageEl = document.getElementById('message');
+    const restartBtn = document.getElementById('restart');
+    const intro = document.getElementById('intro');
+
+    let ballColor = '#ffffff';
+
+    let currentHole = 0;
+    const holes = [
+      {
+        start: { x: 180, y: 440 },
+        hole: { x: 180, y: 80, r: 12 },
+        walls: [
+          { x: 60, y: 250, w: 240, h: 14 },
+          { x: 0, y: 150, w: 120, h: 14 },
+          { x: 240, y: 350, w: 120, h: 14 }
+        ]
+      },
+      {
+        start: { x: 180, y: 460 },
+        hole: { x: 320, y: 60, r: 12 },
+        walls: [
+          { x: 120, y: 300, w: 200, h: 14 },
+          { x: 40, y: 200, w: 14, h: 180 },
+          { x: 200, y: 100, w: 160, h: 14 }
+        ]
+      }
+    ];
+
+    let strokes = 0;
+
+    let sinking = false;
+    let sinkStartMs = 0;
+    const sinkDurationMs = 420;
+
+    let pendingAdvanceTimeout = null;
+    let holeLocked = false;
+
+    const ball = {
+      x: holes[0].start.x,
+      y: holes[0].start.y,
+      r: 7,
+      vx: 0,
+      vy: 0,
+      moving: false
+    };
+
+    let hole = holes[0].hole;
+    let walls = holes[0].walls;
+
+    let aiming = false;
+    let aimX = 0;
+    let aimY = 0;
+    const maxPower = 80;
+
+    // ✅ FIX: Convert mouse/touch coords to canvas coords (because CSS scales the canvas)
+    function getCanvasPos(evt) {
+      const rect = canvas.getBoundingClientRect();
+      const clientX = evt.touches ? evt.touches[0].clientX : evt.clientX;
+      const clientY = evt.touches ? evt.touches[0].clientY : evt.clientY;
+
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+
+      return {
+        x: (clientX - rect.left) * scaleX,
+        y: (clientY - rect.top) * scaleY
+      };
+    }
+
+    document.querySelectorAll('.color').forEach(c => {
+      c.addEventListener('click', () => {
+        document.querySelectorAll('.color').forEach(x => x.classList.remove('selected'));
+        c.classList.add('selected');
+        ballColor = c.dataset.color;
+      });
+    });
+
+    function loadHole(i) {
+      sinking = false;
+      sinkStartMs = 0;
+
+      if (pendingAdvanceTimeout !== null) {
+        clearTimeout(pendingAdvanceTimeout);
+        pendingAdvanceTimeout = null;
+      }
+      holeLocked = false;
+
+      currentHole = i;
+      const h = holes[i];
+      hole = h.hole;
+      walls = h.walls;
+
+      ball.x = h.start.x;
+      ball.y = h.start.y;
+      ball.vx = 0;
+      ball.vy = 0;
+      ball.moving = false;
+      aiming = false;
+
+      messageEl.textContent = `Hole ${i + 1}`;
+    }
+
+    function restartGame() {
+      sinking = false;
+      sinkStartMs = 0;
+
+      if (pendingAdvanceTimeout !== null) {
+        clearTimeout(pendingAdvanceTimeout);
+        pendingAdvanceTimeout = null;
+      }
+      holeLocked = false;
+
+      strokes = 0;
+      strokesEl.textContent = strokes;
+      messageEl.textContent = '';
+
+      loadHole(0);
+      intro.style.display = 'flex';
+    }
+
+    document.getElementById('startGame').addEventListener('click', () => {
+      intro.style.display = 'none';
+      strokes = 0;
+      strokesEl.textContent = strokes;
+      messageEl.textContent = 'Hole 1';
+      loadHole(0);
+    });
+
+    restartBtn.addEventListener('click', restartGame);
+
+    // Mouse controls
+    canvas.addEventListener('mousedown', (e) => {
+      if (intro.style.display !== 'none') return;
+      if (ball.moving || sinking) return;
+      aiming = true;
+      const p = getCanvasPos(e);
+      aimX = p.x;
+      aimY = p.y;
+    });
+
+    canvas.addEventListener('mousemove', (e) => {
+      if (!aiming) return;
+      const p = getCanvasPos(e);
+      aimX = p.x;
+      aimY = p.y;
+    });
+
+    canvas.addEventListener('mouseup', () => shoot());
+
+    // Touch controls (mobile)
+    canvas.addEventListener('touchstart', (e) => {
+      if (intro.style.display !== 'none') return;
+      if (ball.moving || sinking) return;
+      aiming = true;
+      const p = getCanvasPos(e);
+      aimX = p.x;
+      aimY = p.y;
+      e.preventDefault();
+    }, { passive: false });
+
+    canvas.addEventListener('touchmove', (e) => {
+      if (!aiming) return;
+      const p = getCanvasPos(e);
+      aimX = p.x;
+      aimY = p.y;
+      e.preventDefault();
+    }, { passive: false });
+
+    canvas.addEventListener('touchend', () => shoot());
+
+    function shoot() {
+      if (!aiming) return;
+      aiming = false;
+
+      const dx = ball.x - aimX;
+      const dy = ball.y - aimY;
+      const dist = Math.hypot(dx, dy);
+      if (dist === 0) return;
+
+      const power = Math.min(dist, maxPower);
+      const nx = dx / dist;
+      const ny = dy / dist;
+
+      ball.vx = nx * power * 0.15;
+      ball.vy = ny * power * 0.15;
+      ball.moving = true;
+
+      strokes++;
+      strokesEl.textContent = strokes;
+    }
+
+    function drawBall() {
+      let scale = 1;
+      let alpha = 1;
+      if (sinking) {
+        const t = Math.min((performance.now() - sinkStartMs) / sinkDurationMs, 1);
+        const ease = 1 - Math.pow(1 - t, 3);
+        scale = 1 - 0.85 * ease;
+        alpha = 1 - 1.0 * ease;
+      }
+
+      ctx.save();
+      ctx.globalAlpha = alpha;
+
+      const r = ball.r * scale;
+      const g = ctx.createRadialGradient(ball.x - 2, ball.y - 3, 2, ball.x, ball.y, r);
+      g.addColorStop(0, '#ffffff');
+      g.addColorStop(0.3, ballColor);
+      g.addColorStop(1, 'rgba(0,0,0,0.85)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(ball.x, ball.y, r, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = 'rgba(255,255,255,0.35)';
+      ctx.beginPath();
+      ctx.arc(ball.x - 2.4 * scale, ball.y - 2.8 * scale, 1.6 * scale, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.restore();
+    }
+
+    function resolveEdgeBounces() {
+      if (ball.x - ball.r < 0) { ball.x = ball.r; ball.vx *= -0.9; }
+      if (ball.x + ball.r > canvas.width) { ball.x = canvas.width - ball.r; ball.vx *= -0.9; }
+      if (ball.y - ball.r < 0) { ball.y = ball.r; ball.vy *= -0.9; }
+      if (ball.y + ball.r > canvas.height) { ball.y = canvas.height - ball.r; ball.vy *= -0.9; }
+    }
+
+    function resolveWallCollisions() {
+      walls.forEach(w => {
+        if (
+          ball.x + ball.r > w.x &&
+          ball.x - ball.r < w.x + w.w &&
+          ball.y + ball.r > w.y &&
+          ball.y - ball.r < w.y + w.h
+        ) {
+          const overlapX = Math.min(ball.x + ball.r - w.x, w.x + w.w - (ball.x - ball.r));
+          const overlapY = Math.min(ball.y + ball.r - w.y, w.y + w.h - (ball.y - ball.r));
+
+          if (overlapX < overlapY) {
+            if (ball.x < w.x) ball.x -= overlapX; else ball.x += overlapX;
+            ball.vx *= -0.85;
+          } else {
+            if (ball.y < w.y) ball.y -= overlapY; else ball.y += overlapY;
+            ball.vy *= -0.85;
+          }
+        }
+      });
+    }
+
+    function tryHoleCapture() {
+      if (holeLocked || sinking) return;
+
+      const dist = Math.hypot(ball.x - hole.x, ball.y - hole.y);
+      const speed = Math.hypot(ball.vx, ball.vy);
+
+      if (dist < hole.r + 3) {
+        ball.x += (hole.x - ball.x) * 0.25;
+        ball.y += (hole.y - ball.y) * 0.25;
+        ball.vx *= 0.6;
+        ball.vy *= 0.6;
+
+        if (dist < hole.r * 0.6 || (dist < hole.r && speed < 0.25)) {
+          holeLocked = true;
+          ball.moving = false;
+          ball.vx = 0;
+          ball.vy = 0;
+          ball.x = hole.x;
+          ball.y = hole.y;
+
+          sinking = true;
+          sinkStartMs = performance.now();
+
+          const advance = () => {
+            sinking = false;
+            if (currentHole < holes.length - 1) loadHole(currentHole + 1);
+            else messageEl.textContent = '🏆 Course Complete!';
+          };
+
+          if (pendingAdvanceTimeout !== null) clearTimeout(pendingAdvanceTimeout);
+          pendingAdvanceTimeout = setTimeout(() => {
+            pendingAdvanceTimeout = null;
+            advance();
+          }, sinkDurationMs + 120);
+        }
+      }
+    }
+
+    function update() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      ctx.beginPath();
+      ctx.arc(hole.x, hole.y, hole.r, 0, Math.PI * 2);
+      ctx.fillStyle = '#111';
+      ctx.fill();
+
+      ctx.fillStyle = '#145a32';
+      walls.forEach(w => ctx.fillRect(w.x, w.y, w.w, w.h));
+
+      if (aiming) {
+        const dx = ball.x - aimX;
+        const dy = ball.y - aimY;
+        const dist = Math.hypot(dx, dy) || 1;
+        const power = Math.min(dist, maxPower);
+        const nx = dx / dist;
+        const ny = dy / dist;
+        const lineX = ball.x - nx * power;
+        const lineY = ball.y - ny * power;
+
+        ctx.beginPath();
+        ctx.moveTo(ball.x, ball.y);
+        ctx.lineTo(lineX, lineY);
+        ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+
+      if (ball.moving) {
+        ball.x += ball.vx;
+        ball.y += ball.vy;
+
+        ball.vx *= 0.985;
+        ball.vy *= 0.985;
+
+        if (Math.hypot(ball.vx, ball.vy) < 0.03) {
+          ball.vx = 0;
+          ball.vy = 0;
+          ball.moving = false;
+        }
+
+        resolveEdgeBounces();
+        resolveWallCollisions();
+        tryHoleCapture();
+      }
+
+      drawBall();
+      requestAnimationFrame(update);
+    }
+
+    intro.style.display = 'flex';
+    messageEl.textContent = '';
+    strokesEl.textContent = '0';
+    loadHole(0);
+    update();
+  </script>
+</body>
+</html>
